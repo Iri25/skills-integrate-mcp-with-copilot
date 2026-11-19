@@ -3,6 +3,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const signupContainer = document.getElementById("signup-container");
+  const userMenuButton = document.getElementById("user-menu-button");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const loginCancel = document.getElementById("login-cancel");
+  const loginMessage = document.getElementById("login-message");
+  let adminToken = sessionStorage.getItem("adminToken");
+
+  function updateAdminUI() {
+    signupContainer.classList.toggle("hidden", !adminToken);
+    userMenuButton.textContent = adminToken ? "Logout" : "👤";
+    userMenuButton.setAttribute(
+      "aria-label",
+      adminToken ? "Logout administrator" : "Administrator login"
+    );
+  }
+
+  function adminHeaders() {
+    return adminToken ? { "X-Auth-Token": adminToken } : {};
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -30,7 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${adminToken ? `<button class="delete-btn" data-activity="${name}" data-email="${email}" aria-label="Unregister ${email}">❌</button>` : ""}</li>`
                   )
                   .join("")}
               </ul>
@@ -80,6 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: adminHeaders(),
         }
       );
 
@@ -124,6 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: adminHeaders(),
         }
       );
 
@@ -156,5 +178,62 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initialize app
+  userMenuButton.addEventListener("click", async () => {
+    if (adminToken) {
+      await fetch("/logout", {
+        method: "POST",
+        headers: adminHeaders(),
+      }).catch(() => {});
+      adminToken = null;
+      sessionStorage.removeItem("adminToken");
+      updateAdminUI();
+      fetchActivities();
+      return;
+    }
+
+    loginModal.classList.remove("hidden");
+  });
+
+  loginCancel.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginMessage.classList.add("hidden");
+  });
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        loginMessage.textContent = result.detail || "Login failed";
+        loginMessage.className = "message error";
+        loginMessage.classList.remove("hidden");
+        return;
+      }
+
+      adminToken = result.token;
+      sessionStorage.setItem("adminToken", adminToken);
+      loginForm.reset();
+      loginModal.classList.add("hidden");
+      loginMessage.classList.add("hidden");
+      updateAdminUI();
+      fetchActivities();
+    } catch (error) {
+      loginMessage.textContent = "Login failed";
+      loginMessage.className = "message error";
+      loginMessage.classList.remove("hidden");
+    }
+  });
+
+  updateAdminUI();
   fetchActivities();
 });
